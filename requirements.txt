@@ -1,0 +1,10 @@
+python-telegram-bot==20.7
+flask
+requests
+nest_asyncio
+telegram
+apscheduler
+httpx
+aiohttp
+qrcode
+httpx
