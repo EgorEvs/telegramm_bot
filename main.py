@@ -39,7 +39,12 @@ from dotenv import load_dotenv
 import openai
 
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")  # **NEW**
+
+# **NEW**: Подхватываем и проверяем ключ
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise RuntimeError("OPENAI_API_KEY не задан! Установите его в окружении или в .env")
+openai.api_key = OPENAI_API_KEY
 
 # ─── CONFIG ──────────────────────────────────────────────
 API_BASE       = "https://www.autotechnik.store/api/v1"
@@ -80,9 +85,7 @@ manager_chat  = {}               # manager_tid → customer_id
 chat_manager  = {}               # customer_id → manager_login
 unread        = defaultdict(set) # manager_tid → set(customer_id)
 history       = defaultdict(lambda: deque(maxlen=HISTORY_LIMIT))
-
-# **NEW**: режим «чата с ботом» для клиента
-bot_chat_mode = {}               # telegram_id → bool
+bot_chat_mode = {}               # telegram_id → bool: режим «чат с ботом»
 
 # ─── HELPERS ────────────────────────────────────────────
 def normalize(ph: str | None) -> str:
@@ -131,13 +134,13 @@ def kb_manager():
     )
 
 def ikb_mgr_chat():
-    return InlineKeyboardMarkup([[  
+    return InlineKeyboardMarkup([[
         InlineKeyboardButton("🛑 Закрыть чат", callback_data="mgr_close"),
         InlineKeyboardButton("📜 История",    callback_data="mgr_history"),
     ]])
 
 def ikb_cli_chat():
-    return InlineKeyboardMarkup([[  
+    return InlineKeyboardMarkup([[
         InlineKeyboardButton("🛑 Завершить чат", callback_data="cli_close"),
     ]])
 
@@ -174,15 +177,17 @@ def order_message(oid, name, price, status, addr="", list_mode=False):
         return None
     return base + f"🛒 {clean(name)} — {rub(price)}\n📌 Статус: {status}{addr_line}"
 
-# ─── CATALOGS DATA & HANDLERS (без изменений) ──────────
-CATALOG_SECTIONS = { ... }  # (ваши секции – без изменений)
+# ─── CATALOGS DATA ─────────────────────────────────────
+CATALOG_SECTIONS = {
+    # (ваши секции без изменений)
+}
 
 async def h_catalogs(u: Update, _):
-    # (ваша реализация без изменений)
+    # (реализация без изменений)
     ...
 
 async def h_catalog_section(cbq: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    # (ваша реализация без изменений)
+    # (реализация без изменений)
     ...
 
 # ─── /start ────────────────────────────────────────────
@@ -251,14 +256,14 @@ async def h_chat_request(u: Update, _):
     # (без изменений)
     ...
 
-# **NEW**: запрос «Чат с ботом»
+# ─── Chat request to bot ───────────────────────────────
 async def h_chat_bot_request(u: Update, _):
     uid = u.effective_user.id
     cur.execute("SELECT customer_id FROM users WHERE telegram_id=?", (uid,))
-    row = cur.fetchone()
-    if not row:
+    r = cur.fetchone()
+    if not r:
         return await u.message.reply_text("Сначала авторизуйтесь.", reply_markup=kb_start())
-    cid = row[0]
+    cid = r[0]
     client_chat[uid] = cid
     bot_chat_mode[uid] = True
     await u.message.reply_text(
@@ -281,23 +286,23 @@ async def h_cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data, uid = cb.data, cb.from_user.id
 
     if data == "cli_close":
-        # **NEW** сбрасываем и режим «чата с ботом»
         bot_chat_mode.pop(uid, None)
         await _close_common(uid, ctx, from_manager=False)
         return
 
-    # остальные колбэки без изменений:
-    if data.startswith("open:") or data in ("mgr_close","mgr_history"):
-        # (ваша логика)
+    if data.startswith("open:") or data in ("mgr_close", "mgr_history"):
+        # (реализация без изменений)
         ...
 
 async def _close_common(uid, ctx, *, from_manager):
     # (без изменений)
     ...
 
+# ─── Ловим «🛑 Завершить чат» ───────────────────────────
 async def h_cli_close(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    # перенаправляем на общий закрывашку, режим бота уже сброшен в колбэке
-    await _close_common(u.effective_user.id, ctx, from_manager=False)
+    uid = u.effective_user.id
+    bot_chat_mode.pop(uid, None)
+    await _close_common(uid, ctx, from_manager=False)
 
 # ─── TEXT HANDLERS ─────────────────────────────────────
 async def h_text_manager(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -307,11 +312,10 @@ async def h_text_manager(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     uid = u.effective_user.id
 
-    # **NEW**: если в режиме «Чат с ботом» — отправляем в GPT
+    # **NEW**: режим «Чат с ботом»
     if bot_chat_mode.get(uid):
         user_text = u.message.text
 
-        # отправляем GPT с функциями
         resp = await openai.ChatCompletion.acreate(
             model="gpt-4o-mini",
             messages=[
@@ -360,7 +364,6 @@ async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         msg = resp.choices[0].message
 
-        # если GPT выбрал функцию — выполняем её
         if msg.get("function_call"):
             fn   = msg.function_call.name
             args = json.loads(msg.function_call.arguments)
@@ -389,7 +392,6 @@ async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             else:
                 result = {"error": f"Unknown function {fn}"}
 
-            # передаём результат обратно GPT
             follow = await openai.ChatCompletion.acreate(
                 model="gpt-4o-mini",
                 messages=[
@@ -400,10 +402,9 @@ async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return await u.message.reply_text(follow.choices[0].message.content)
 
-        # иначе — просто ответ от GPT
         return await u.message.reply_text(msg.content)
 
-    # ─── иначе — обычный клиент→менеджер чат (без изменений) ─────────────────────
+    # обычный клиент→менеджер чат (без изменений)
     cid = client_chat.get(uid)
     if not cid:
         return
