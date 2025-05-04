@@ -38,6 +38,7 @@ from dotenv import load_dotenv
 import openai
 
 load_dotenv()
+
 openai.api_key = "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"
 
 # ─── CONFIG ──────────────────────────────────────────────
@@ -86,7 +87,7 @@ def clean(t: str | None) -> str:
 
 def rub(val) -> str:
     try:
-        return f"{float(val):,.2f}".replace(',', ' ') + " ₽"
+        return f"{float(val):,.2f}".replace(',', ' ').replace('.00','') + " ₽"
     except:
         return "—"
 
@@ -131,9 +132,7 @@ def kb_client_chat():
 # ─── ORDER MESSAGE BUILDER ────────────────────────────
 READY_PLAIN = re.compile(r"^готово?\s+к\s+выдаче$", re.I)
 READY_DAY   = re.compile(r"^готово?\s+к\s+выдаче\s+(\d+)", re.I)
-EXCLUDED    = {s.lower() for s in {
-    "Выдано","Отказ поставщика","Отказ клиента","Возврат от покупателя"
-}}
+EXCLUDED    = {s.lower() for s in {"Выдано","Отказ поставщика","Отказ клиента","Возврат от покупателя"}}
 
 def order_message(oid, name, price, status, addr="", list_mode=False):
     st = clean(status)
@@ -150,13 +149,13 @@ def order_message(oid, name, price, status, addr="", list_mode=False):
         return None
     return base + f"🛒 {clean(name)} — {rub(price)}\n📌 Статус: {status}{addr_line}"
 
-# ─── CATALOGS DATA ─────────────────────────────────────
+# ─── CATALOGS DATA & HANDLERS ──────────────────────────
 CATALOG_SECTIONS = {
     "61": [
-        ("Запчасти по разделам",         "https://www.autotechnik.store/d_catalog3/61/"),
-        ("Запчасти для грузовой техники","https://www.autotechnik.store/d_catalog3/124/"),
-        ("Силовые агрегаты",            "https://www.autotechnik.store/d_catalog3/126/"),
-        # ... остальные подразделы ...
+        ("Запчасти по разделам",                "https://www.autotechnik.store/d_catalog3/61/"),
+        ("Запчасти для грузовой техники",       "https://www.autotechnik.store/d_catalog3/124/"),
+        ("Силовые агрегаты",                  "https://www.autotechnik.store/d_catalog3/126/"),
+        # ... остальные разделы ...
     ],
     "autocatalog": [
         ("Подбор по параметрам", "https://www.autotechnik.store/autocatalog/"),
@@ -171,7 +170,7 @@ async def h_catalogs(u: Update, _):
     buttons = [
         [InlineKeyboardButton("1. Запчасти по разделам", callback_data="cat:61")],
         [InlineKeyboardButton("2. Подбор по параметрам", callback_data="cat:autocatalog")],
-        [InlineKeyboardButton("⬅️ Назад в меню",           callback_data="back_to_client")],
+        [InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_client")],
     ]
     await u.message.reply_text("📚 Выберите раздел каталога:", reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -293,24 +292,24 @@ async def _send_mgr_list(u: Update, *, active=False):
     uid = u.effective_user.id
     if active:
         title = "🗂 *Активные чаты:*"
-        opened = [cid for mgr_tid, cid in manager_chat.items() if mgr_tid == uid]
-        pending= [cid for cid in unread[uid] if cid not in opened]
-        cids   = opened + pending
+        opened  = [cid for mgr_tid, cid in manager_chat.items() if mgr_tid == uid]
+        pending = [cid for cid in unread[uid] if cid not in opened]
+        cids    = opened + pending
         if not cids:
             return await u.message.reply_text("Список пуст.")
         q = ",".join("?" for _ in cids)
         cur.execute(f"SELECT customer_id,telegram_id,phone FROM users WHERE customer_id IN ({q})", cids)
         rows = cur.fetchall()
     else:
-        title="👥 *Мои клиенты:*"
+        title = "👥 *Мои клиенты:*"
         cur.execute("SELECT manager_login FROM managers WHERE telegram_id=?", (uid,))
         r=cur.fetchone()
         if not r: return
-        mlog=r[0]
+        mlog = r[0]
         cur.execute("SELECT customer_id,telegram_id,phone FROM users WHERE manager_login=?", (mlog,))
-        rows=cur.fetchall()
-    buttons=[]
-    for cid,tid,phone in rows:
+        rows = cur.fetchall()
+    buttons = []
+    for cid, tid, phone in rows:
         try:
             name = (await u.get_bot().get_chat(tid)).full_name
         except:
@@ -379,12 +378,10 @@ async def h_cli_close(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ─── TEXT HANDLERS ─────────────────────────────────────
 async def h_text_manager(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cid = manager_chat.get(u.effective_user.id)
-    if not cid:
-        return
+    if not cid: return
     cur.execute("SELECT telegram_id FROM users WHERE customer_id=?", (cid,))
     r=cur.fetchone()
-    if not r:
-        return
+    if not r: return
     tgt = r[0]
     txt = u.message.text
     history[cid].append(("Менеджер", txt))
@@ -412,8 +409,7 @@ async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # клиент→менеджер
     cid = client_chat.get(uid)
-    if not cid:
-        return
+    if not cid: return
     mlog = chat_manager.get(cid)
     mgr  = manager_tid(mlog) if mlog else None
     history[cid].append((u.effective_user.full_name, text))
@@ -455,7 +451,7 @@ async def check_once():
             oid=o.get("orderNumber") or o.get("id")
             addr=o.get("deliveryOrderAddress") or ""
             for p in o.get("positions",[]):
-                key=f"{oid}__{p.get('id', p.get('article'))}"
+                key=f"{oid}__{p.get('id',p.get('article'))}"
                 stat=clean(p.get("statusName"))
                 now[key]=stat
                 if not first_run and old.get(key)!=stat:
@@ -477,7 +473,7 @@ def main():
     app = Application.builder()\
         .token(BOT_TOKEN)\
         .request(req)\
-        .drop_pending_updates(True)\
+        .concurrent_updates(True)\
         .build()
 
     # handlers
