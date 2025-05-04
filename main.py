@@ -38,7 +38,6 @@ from dotenv import load_dotenv
 import openai
 
 load_dotenv()
-
 openai.api_key = "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"
 
 # ─── CONFIG ──────────────────────────────────────────────
@@ -87,7 +86,7 @@ def clean(t: str | None) -> str:
 
 def rub(val) -> str:
     try:
-        return f"{float(val):,.2f}".replace(',', ' ').replace('.00','') + " ₽"
+        return f"{float(val):,.2f}".replace(',', ' ') + " ₽"
     except:
         return "—"
 
@@ -411,7 +410,7 @@ async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cid = client_chat.get(uid)
     if not cid: return
     mlog = chat_manager.get(cid)
-    mgr  = manager_tid(mlog) if mlog else None
+    mgr  =	manager_tid(mlog) if mlog else None
     history[cid].append((u.effective_user.full_name, text))
     if mgr and manager_chat.get(mgr)==cid:
         await ctx.bot.send_message(mgr, f"👤 {u.effective_user.full_name}: {text}")
@@ -466,7 +465,7 @@ async def check_once():
         cur.execute("UPDATE users SET last_statuses=? WHERE telegram_id=?", (json.dumps(now, ensure_ascii=False), tid))
     conn.commit()
 
-def main():
+async def main():
     nest_asyncio.apply()
     req = HTTPXRequest(connect_timeout=10, read_timeout=30)
     global app
@@ -497,9 +496,10 @@ def main():
     sch = AsyncIOScheduler()
     sch.add_job(check_once,    "interval", seconds=CHECK_INTERVAL)
     sch.add_job(remind_unread, "interval", seconds=REMIND_INTERVAL)
-    sch.start()
+    sch.start()  # <-- перенесено внутрь main
 
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
