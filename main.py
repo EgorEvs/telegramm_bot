@@ -100,8 +100,13 @@ def kb_start():
 
 def kb_client():
     return ReplyKeyboardMarkup(
-        [["💬 Чат с менеджером"], ["📋 Мои активные заказы"], ["🎁 Бонусная-карта"],
-         ["📚 Каталоги товаров"], ["Чат с ботом"]],
+        [
+            ["💬 Чат с менеджером"],
+            ["📋 Мои активные заказы"],
+            ["🎁 Бонусная-карта"],
+            ["📚 Каталоги товаров"],
+            ["Чат с ботом"]
+        ],
         resize_keyboard=True
     )
 
@@ -115,7 +120,9 @@ def ikb_mgr_chat():
     ]])
 
 def ikb_cli_chat():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Завершить чат", callback_data="cli_close")]])
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("🛑 Завершить чат", callback_data="cli_close"),
+    ]])
 
 def kb_client_chat():
     return ReplyKeyboardMarkup([["🛑 Завершить чат"]], resize_keyboard=True)
@@ -123,19 +130,26 @@ def kb_client_chat():
 # ─── ORDER MESSAGE BUILDER ────────────────────────────
 READY_PLAIN = re.compile(r"^готово?\s+к\s+выдаче$", re.I)
 READY_DAY   = re.compile(r"^готово?\s+к\s+выдаче\s+(\d+)", re.I)
-EXCLUDED    = {s.lower() for s in {"Выдано","Отказ поставщика","Отказ клиента","Возврат от покупателя"}}
+EXCLUDED    = {s.lower() for s in {
+    "Выдано","Отказ поставщика","Отказ клиента",
+    "Отказ клиента вышел срок хранения",
+    "возврат от покупателя","Возврат поставщику",
+    "Возврат одобрен","Возврат отклонён"
+}}
 
 def order_message(oid, name, price, status, addr="", list_mode=False):
     st = clean(status)
     base = f"📦 *Заказ №{oid}*\n"
-    addr_line = f"\n🏠 {addr}" if addr else ""
+    addr_line = f"\n🏠 Пункт выдачи: {addr}" if addr else ""
     if READY_PLAIN.fullmatch(st):
         return base + f"{clean(name)} — {rub(price)}{addr_line}\n🏬 *Готов к выдаче!*"
     m = READY_DAY.match(st)
     if m:
         day = int(m.group(1))
-        note = "⚠️ *Последний день хранения!*" if day == 7 else "📅 Ваш заказ готовится."
-        return base + f"{clean(name)} — {rub(price)}{addr_line}\n{note}"
+        if day == 7:
+            return base + f"{clean(name)} — {rub(price)}{addr_line}\n⚠️ *Последний день хранения!*"
+        else:
+            return base + f"{clean(name)} — {rub(price)}{addr_line}\n📅 Ваш заказ готовится."
     if list_mode and st.lower() in EXCLUDED:
         return None
     return base + f"🛒 {clean(name)} — {rub(price)}\n📌 Статус: {status}{addr_line}"
@@ -145,8 +159,19 @@ CATALOG_SECTIONS = {
     "61": [
         ("Запчасти по разделам",                "https://www.autotechnik.store/d_catalog3/61/"),
         ("Запчасти для грузовой техники",       "https://www.autotechnik.store/d_catalog3/124/"),
-        ("Силовые агрегаты",                    "https://www.autotechnik.store/d_catalog3/126/"),
-        # … и т.д. …
+        ("Силовые агрегаты",                  "https://www.autotechnik.store/d_catalog3/126/"),
+        ("Бачки",                              "https://www.autotechnik.store/d_catalog3/61/bachci/"),
+           ("Втулки",                            "https://www.autotechnik.store/d_catalog3/61/vtulci/"),
+            ("Втулки металические",                "https://www.autotechnik.store/d_catalog3/61/vtulci-metalichescie/"),
+            ("Выхлопная система",             "https://www.autotechnik.store/d_catalog3/61/vihlopnaya-sistema/"),
+            ("Заглушки / Держатели",         "https://www.autotechnik.store/d_catalog3/61/zaglushci/"),
+            ("Замки",                          "https://www.autotechnik.store/d_catalog3/61/zamci/"),
+            ("Запчасти двигателя",             "https://www.autotechnik.store/d_catalog3/61/zapchasti-dvigatelya/"),
+            ("Зеркала",                             "https://www.autotechnik.store/d_catalog3/61/zercala/"),
+            ("Кожухи",                         "https://www.autotechnik.store/d_catalog3/61/corpusa--cojuhi/"),
+            ("Краны",                       "https://www.autotechnik.store/d_catalog3/61/crani/"),
+            ("Крестовины",                "https://www.autotechnik.store/d_catalog3/61/crestovini/"),
+            ("Кронштейны",                  "https://www.autotechnik.store/d_catalog3/61/cronshteini/"),
     ],
     "autocatalog": [
         ("Подбор по параметрам", "https://www.autotechnik.store/autocatalog/"),
@@ -154,7 +179,45 @@ CATALOG_SECTIONS = {
         ("Сальники",             "https://www.autotechnik.store/d_catalog3/98/"),
         ("Ремни",                "https://www.autotechnik.store/d_catalog3/97/"),
     ],
-    # … другие разделы …
+    "110": [
+        ("Масла",                    "https://www.autotechnik.store/d_catalog3/110/"),
+        ("Масла моторные",           "https://www.autotechnik.store/d_catalog3/110/maslo-motornoe/"),
+        ("Масла трансмиссионные",    "https://www.autotechnik.store/d_catalog3/110/maslo-transmissionnoe-/"),
+        # ... (и т.д.) ...
+    ],
+    "100": [
+        ("Фильтра",                 "https://www.autotechnik.store/d_catalog3/100/"),
+        ("Масляные фильтра",        "https://www.autotechnik.store/d_catalog3/100/maslyanie-filtra/"),
+        # ...
+    ],
+    "103": [
+        ("Автохимия",               "https://www.autotechnik.store/d_catalog3/103/"),
+        ("AdBlue",                  "https://www.autotechnik.store/d_catalog3/103/adblue/"),
+        # ...
+    ],
+    "42": [
+        ("Лакокрасочные материалы", "https://www.autotechnik.store/d_catalog3/42/"),
+        # ...
+    ],
+    "140": [
+        ("Абразивные материалы",    "https://www.autotechnik.store/d_catalog3/140/"),
+        # ...
+    ],
+    "142": [
+        ("Автоаксессуары",          "https://www.autotechnik.store/d_catalog3/142/"),
+        # ...
+    ],
+    "31": [
+        ("Крепёжные элементы",      "https://www.autotechnik.store/d_catalog3/31/"),
+        # ...
+    ],
+    "145": [
+        ("Фаркопы",                 "https://www.autotechnik.store/d_catalog3/145/"),
+    ],
+    "102": [
+        ("Электрооборудование",     "https://www.autotechnik.store/d_catalog3/102/"),
+        # ...
+    ],
 }
 
 async def h_catalogs(u: Update, _):
@@ -184,6 +247,7 @@ async def h_start(u: Update, _):
     if cur.fetchone():
         await u.message.reply_text("👋 Вы вошли как менеджер.", parse_mode="Markdown", reply_markup=kb_manager())
     else:
+
         await u.message.reply_text("👋 Авторизуйтесь:", parse_mode="Markdown", reply_markup=kb_start())
 
 # ─── /manager or /reg1664 ────────────────────────────
