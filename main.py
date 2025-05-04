@@ -44,7 +44,7 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY не задан! Установите его в окружении или в .env")
-openai.api_key = OPENAI_API_KEY
+openai.api_key = openai.api_key = "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"
 
 # ─── CONFIG ──────────────────────────────────────────────
 API_BASE       = "https://www.autotechnik.store/api/v1"
