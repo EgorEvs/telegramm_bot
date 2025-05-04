@@ -597,4 +597,3 @@ async def main():
 if __name__ == "__main__":
     nest_asyncio.apply()
     asyncio.run(main())
-git commit -am "Добавил напоминания о выдаче и кнопку возврата"
