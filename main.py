@@ -560,10 +560,11 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex(r"^🛑 Завершить чат$"), h_cli_close), group=2)
 
     # scheduler
-    sch = AsyncIOScheduler()
-    sch.add_job(check_once,    "interval", seconds=CHECK_INTERVAL)
-    sch.add_job(remind_unread, "interval", seconds=REMIND_INTERVAL)
-    sch.start()  # ✅ перенесено внутрь async main
+   sch = AsyncIOScheduler()
+sch.add_job(check_once, "interval", seconds=CHECK_INTERVAL)
+sch.add_job(remind_unread, "interval", seconds=REMIND_INTERVAL)
+sch.start()
+
 
     # start polling
     await app.run_polling()
