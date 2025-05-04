@@ -1,6 +1,6 @@
 """
 ────────────────────────────────────────────────────────────
- AUTOTECHNIK BOT · main.py · v4.8  (ChatGPT + polling fix v2)
+ AUTOTECHNIK BOT · main.py · v4.5  (full version, modified)
 ────────────────────────────────────────────────────────────
 """
 
@@ -34,17 +34,15 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 from dotenv import load_dotenv
-import openai
-
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY") or "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"
 
 # ─── CONFIG ──────────────────────────────────────────────
-API_BASE        = "https://www.autotechnik.store/api/v1"
-API_TOKEN       = "d579a8bdade5445c3683a0bb9526b657de79de53"
-BOT_TOKEN       = os.getenv("TG_BOT_TOKEN")
+API_BASE      = "https://www.autotechnik.store/api/v1"
+API_V2        = "https://www.autotechnik.store/api/v2"
+API_TOKEN     = "d579a8bdade5445c3683a0bb9526b657de79de53"
+BOT_TOKEN     = os.getenv("TG_BOT_TOKEN")
 CHECK_INTERVAL  = 120
-REMIND_INTERVAL = 120
+REMIND_INTERVAL = 120  # уведомления о новом чате — каждые 2 минуты
 DB_PATH         = "db.sqlite3"
 HISTORY_LIMIT   = 50
 
@@ -72,12 +70,11 @@ CREATE TABLE IF NOT EXISTS managers (
 conn.commit()
 
 # ─── STATE ──────────────────────────────────────────────
-client_chat   = {}               # client_tid → customer_id
-manager_chat  = {}               # manager_tid → customer_id
-chat_manager  = {}               # customer_id → manager_login
-unread        = defaultdict(set) # manager_tid → set(customer_id)
-history       = defaultdict(lambda: deque(maxlen=HISTORY_LIMIT))
-bot_chat_mode = {}               # telegram_id → bool
+client_chat  = {}               # client_tid → customer_id
+manager_chat = {}               # manager_tid → customer_id
+chat_manager = {}               # customer_id → manager_login
+unread       = defaultdict(set) # manager_tid → set(customer_id)
+history      = defaultdict(lambda: deque(maxlen=HISTORY_LIMIT))
 
 # ─── HELPERS ────────────────────────────────────────────
 def normalize(ph: str | None) -> str:
@@ -88,45 +85,58 @@ def clean(t: str | None) -> str:
 
 def rub(val) -> str:
     try:
-        return f"{float(val):,.2f}".replace(',', ' ') + " ₽"
+        return f"{float(val):,.2f}".replace(',', ' ').replace('.00','') + " ₽"
     except:
         return "—"
 
 def manager_tid(login: str) -> int | None:
-    cur.execute("SELECT telegram_id FROM managers WHERE manager_login=?", (login,))
+    cur.execute(
+        "SELECT telegram_id FROM managers WHERE manager_login=?",
+        (login,)
+    )
     r = cur.fetchone()
     return r[0] if r else None
 
 # ─── KEYBOARDS ─────────────────────────────────────────
 def kb_start():
-    return ReplyKeyboardMarkup([[KeyboardButton("📲 Отправить номер", request_contact=True)]], resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton("📲 Отправить номер", request_contact=True)]],
+        resize_keyboard=True
+    )
 
 def kb_client():
     return ReplyKeyboardMarkup(
         [
             ["💬 Чат с менеджером"],
             ["📋 Мои активные заказы"],
-            ["🎁 Бонусная-карта"],
-            ["📚 Каталоги товаров"],
-            ["Чат с ботом"]
+            ["🎁 Бонусная‑карта"],
+            ["📚 Каталоги товаров"]
         ],
         resize_keyboard=True
     )
 
 def kb_manager():
-    return ReplyKeyboardMarkup([["🗂 Активные чаты"], ["👥 Мои клиенты"]], resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        [["🗂 Активные чаты"], ["👥 Мои клиенты"]],
+        resize_keyboard=True
+    )
 
 def ikb_mgr_chat():
-    return InlineKeyboardMarkup([[  
-        InlineKeyboardButton("🛑 Закрыть чат",   callback_data="mgr_close"),
-        InlineKeyboardButton("📜 История",       callback_data="mgr_history"),
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("🛑 Закрыть чат", callback_data="mgr_close"),
+        InlineKeyboardButton("📜 История",    callback_data="mgr_history"),
     ]])
 
 def ikb_cli_chat():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Завершить чат", callback_data="cli_close")]])
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("🛑 Завершить чат", callback_data="cli_close"),
+    ]])
 
 def kb_client_chat():
-    return ReplyKeyboardMarkup([["🛑 Завершить чат"]], resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        [["🛑 Завершить чат"]],
+        resize_keyboard=True
+    )
 
 # ─── ORDER MESSAGE BUILDER ────────────────────────────
 READY_PLAIN = re.compile(r"^готово?\s+к\s+выдаче$", re.I)
@@ -150,7 +160,7 @@ def order_message(oid, name, price, status, addr="", list_mode=False):
         if day == 7:
             return base + f"{clean(name)} — {rub(price)}{addr_line}\n⚠️ *Последний день хранения!*"
         else:
-            return base + f"{clean(name)} — {rub(price)}{addr_line}\n📅 Ваш заказ готовится."
+            return base + f"{clean(name)} — {rub(price)}{addr_line}\n📅 Ожидайте, ваш заказ готовится."
     if list_mode and st.lower() in EXCLUDED:
         return None
     return base + f"🛒 {clean(name)} — {rub(price)}\n📌 Статус: {status}{addr_line}"
@@ -160,19 +170,19 @@ CATALOG_SECTIONS = {
     "61": [
         ("Запчасти по разделам",                "https://www.autotechnik.store/d_catalog3/61/"),
         ("Запчасти для грузовой техники",       "https://www.autotechnik.store/d_catalog3/124/"),
-        ("Силовые агрегаты",                    "https://www.autotechnik.store/d_catalog3/126/"),
-        ("Бачки",                               "https://www.autotechnik.store/d_catalog3/61/bachci/"),
-        ("Втулки",                              "https://www.autotechnik.store/d_catalog3/61/vtulci/"),
-        ("Втулки металлические",                "https://www.autotechnik.store/d_catalog3/61/vtulci-metalichescie/"),
-        ("Выхлопная система",                   "https://www.autotechnik.store/d_catalog3/61/vihlopnaya-sistema/"),
-        ("Заглушки / Держатели",                "https://www.autotechnik.store/d_catalog3/61/zaglushci/"),
-        ("Замки",                               "https://www.autotechnik.store/d_catalog3/61/zamci/"),
-        ("Запчасти двигателя",                  "https://www.autotechnik.store/d_catalog3/61/zapchasti-dvigatelya/"),
-        ("Зеркала",                             "https://www.autotechnik.store/d_catalog3/61/zercala/"),
-        ("Кожухи",                              "https://www.autotechnik.store/d_catalog3/61/corpusa--cojuhi/"),
-        ("Краны",                               "https://www.autotechnik.store/d_catalog3/61/crani/"),
-        ("Крестовины",                          "https://www.autotechnik.store/d_catalog3/61/crestovini/"),
-        ("Кронштейны",                          "https://www.autotechnik.store/d_catalog3/61/cronshteini/"),
+        ("Силовые агрегаты",                  "https://www.autotechnik.store/d_catalog3/126/"),
+        ("Бачки",                              "https://www.autotechnik.store/d_catalog3/61/bachci/"),
+           ("Втулки",                            "https://www.autotechnik.store/d_catalog3/61/vtulci/"),
+            ("Втулки металические",                "https://www.autotechnik.store/d_catalog3/61/vtulci-metalichescie/"),
+            ("Выхлопная система",             "https://www.autotechnik.store/d_catalog3/61/vihlopnaya-sistema/"),
+            ("Заглушки / Держатели",         "https://www.autotechnik.store/d_catalog3/61/zaglushci/"),    
+            ("Замки",                          "https://www.autotechnik.store/d_catalog3/61/zamci/"),
+            ("Запчасти двигателя",             "https://www.autotechnik.store/d_catalog3/61/zapchasti-dvigatelya/"),
+            ("Зеркала",                             "https://www.autotechnik.store/d_catalog3/61/zercala/"),
+            ("Кожухи",                         "https://www.autotechnik.store/d_catalog3/61/corpusa--cojuhi/"),
+            ("Краны",                       "https://www.autotechnik.store/d_catalog3/61/crani/"),
+            ("Крестовины",                "https://www.autotechnik.store/d_catalog3/61/crestovini/"),
+            ("Кронштейны",                  "https://www.autotechnik.store/d_catalog3/61/cronshteini/"),
     ],
     "autocatalog": [
         ("Подбор по параметрам", "https://www.autotechnik.store/autocatalog/"),
@@ -184,67 +194,105 @@ CATALOG_SECTIONS = {
         ("Масла",                    "https://www.autotechnik.store/d_catalog3/110/"),
         ("Масла моторные",           "https://www.autotechnik.store/d_catalog3/110/maslo-motornoe/"),
         ("Масла трансмиссионные",    "https://www.autotechnik.store/d_catalog3/110/maslo-transmissionnoe-/"),
+        # ... (и т.д.) ...
     ],
     "100": [
         ("Фильтра",                 "https://www.autotechnik.store/d_catalog3/100/"),
         ("Масляные фильтра",        "https://www.autotechnik.store/d_catalog3/100/maslyanie-filtra/"),
+        # ...
     ],
     "103": [
         ("Автохимия",               "https://www.autotechnik.store/d_catalog3/103/"),
         ("AdBlue",                  "https://www.autotechnik.store/d_catalog3/103/adblue/"),
+        # ...
     ],
     "42": [
         ("Лакокрасочные материалы", "https://www.autotechnik.store/d_catalog3/42/"),
+        # ...
     ],
     "140": [
         ("Абразивные материалы",    "https://www.autotechnik.store/d_catalog3/140/"),
+        # ...
     ],
     "142": [
         ("Автоаксессуары",          "https://www.autotechnik.store/d_catalog3/142/"),
+        # ...
     ],
     "31": [
         ("Крепёжные элементы",      "https://www.autotechnik.store/d_catalog3/31/"),
+        # ...
     ],
     "145": [
         ("Фаркопы",                 "https://www.autotechnik.store/d_catalog3/145/"),
     ],
     "102": [
         ("Электрооборудование",     "https://www.autotechnik.store/d_catalog3/102/"),
-    ],  
+        # ...
+    ],
 }
 
-# ─── CATALOG HANDLERS ──────────────────────────────────
+# ─── SHOW TOP‑LEVEL CATALOGS ───────────────────────────
 async def h_catalogs(u: Update, _):
-    buttons = [[InlineKeyboardButton(f"{i+1}. {text}", callback_data=f"cat:{key}")]
-               for i,(key,items) in enumerate(CATALOG_SECTIONS.items()) for text,_ in items[:1]]
-    buttons.append([InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_client")])
-    await u.message.reply_text("📚 Выберите раздел каталога:", reply_markup=InlineKeyboardMarkup(buttons))
+    buttons = [
+        [InlineKeyboardButton("1. Запчасти по разделам", callback_data="cat:61")],
+        [InlineKeyboardButton("2. Подбор по параметрам", callback_data="cat:autocatalog")],
+        [InlineKeyboardButton("3. Масла",                  callback_data="cat:110")],
+        [InlineKeyboardButton("4. Фильтра",                callback_data="cat:100")],
+        [InlineKeyboardButton("5. Автохимия",              callback_data="cat:103")],
+        [InlineKeyboardButton("6. Лакокрасочные материалы",callback_data="cat:42")],
+        [InlineKeyboardButton("7. Абразивные материалы",   callback_data="cat:140")],
+        [InlineKeyboardButton("8. Автоаксессуары",         callback_data="cat:142")],
+        [InlineKeyboardButton("9. Крепёжные элементы",     callback_data="cat:31")],
+        [InlineKeyboardButton("10. Фаркопы",               callback_data="cat:145")],
+        [InlineKeyboardButton("11. Электрооборудование",   callback_data="cat:102")],
+        [InlineKeyboardButton("⬅️ Назад в меню",           callback_data="back_to_client")],
+    ]
+    await u.message.reply_text(
+        "📚 Выберите раздел каталога:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
+# ─── SHOW SUBSECTIONS UPON CALLBACK ───────────────────
 async def h_catalog_section(cbq: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await cbq.callback_query.answer()
     data = cbq.callback_query.data
     if data == "back_to_client":
         await cbq.callback_query.message.delete()
-        return await cbq.callback_query.message.reply_text("Вы вернулись в меню.", reply_markup=kb_client())
+        return await cbq.callback_query.message.reply_text(
+            "Вы вернулись в главное меню:", reply_markup=kb_client()
+        )
     _, key = data.split(":", 1)
     items = CATALOG_SECTIONS.get(key, [])
-    buttons = [[InlineKeyboardButton(text, url=url)] for (text, url) in items]
+    buttons = [[InlineKeyboardButton(text, url=url)] for text, url in items]
     buttons.append([InlineKeyboardButton("⬅️ Назад", callback_data="cat:61")])
-    await cbq.callback_query.message.edit_text("🔹 Подразделы:", reply_markup=InlineKeyboardMarkup(buttons))
+    await cbq.callback_query.message.edit_text(
+        "🔹 Подразделы:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 # ─── /start ────────────────────────────────────────────
 async def h_start(u: Update, _):
     uid = u.effective_user.id
     cur.execute("SELECT 1 FROM managers WHERE telegram_id=?", (uid,))
     if cur.fetchone():
-        await u.message.reply_text("👋 Вы вошли как *менеджер*.", parse_mode="Markdown", reply_markup=kb_manager())
+        await u.message.reply_text(
+            "👋 Вы вошли как *менеджер*.",
+            parse_mode="Markdown",
+            reply_markup=kb_manager()
+        )
     else:
-        await u.message.reply_text("👋 *Нужна авторизация!*\n📲 Отправьте номер.", parse_mode="Markdown", reply_markup=kb_start())
+        await u.message.reply_text(
+            "👋 *Нужна авторизация!*\n📱 Отправьте номер.",
+            parse_mode="Markdown",
+            reply_markup=kb_start()
+        )
 
 # ─── /manager or /reg1664 ────────────────────────────
 async def h_mgr_reg(u: Update, c: ContextTypes.DEFAULT_TYPE):
     if not c.args:
-        return await u.message.reply_text("Формат: `/reg1664 <логин>`", parse_mode="Markdown")
+        return await u.message.reply_text(
+            "Формат: `/reg1664 <логин>`", parse_mode="Markdown"
+        )
     login = c.args[0]
     cur.execute("INSERT OR REPLACE INTO managers VALUES(?,?)", (login, u.effective_user.id))
     conn.commit()
@@ -259,9 +307,11 @@ async def h_contact(u: Update, _):
         custs = r.json().get("result", [])
     except Exception as exc:
         return await u.message.reply_text(f"❌ API недоступно: {exc}")
+
     cust = next((x for x in custs if normalize(x.get("phone")) == phone), None)
     if not cust:
         return await u.message.reply_text("❌ Номер не найден.")
+
     cid  = cust.get("id") or cust.get("customerID")
     mlog = cust.get("managerLogin") or ""
     cur.execute(
@@ -279,7 +329,7 @@ async def h_card(u: Update, _):
         return await u.message.reply_text("Сначала авторизуйтесь.")
     code = normalize(row[0])
     url  = f"https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={quote_plus(code)}"
-    await u.message.reply_photo(url, caption=f"🎁 Ваша бонусная-карта\n`{code}`", parse_mode="Markdown")
+    await u.message.reply_photo(url, caption=f"🎁 Ваша бонусная‑карта\n`{code}`", parse_mode="Markdown")
 
 # ─── My orders ─────────────────────────────────────────
 async def h_my_orders(u: Update, _):
@@ -306,7 +356,7 @@ async def h_my_orders(u: Update, _):
     if not sent:
         await u.message.reply_text("😊 Нет активных заказов.")
 
-# ─── Chat request to manager ───────────────────────────
+# ─── Chat request ──────────────────────────────────────
 async def h_chat_request(u: Update, _):
     cur.execute("SELECT customer_id,manager_login,phone FROM users WHERE telegram_id=?", (u.effective_user.id,))
     r = cur.fetchone()
@@ -314,7 +364,7 @@ async def h_chat_request(u: Update, _):
         return await u.message.reply_text("Сначала авторизуйтесь.")
     cid, mlog, phone = r
     client_chat[u.effective_user.id] = cid
-    chat_manager[cid] = mlog
+    chat_manager[cid]         = mlog
     mgr = manager_tid(mlog)
     if mgr:
         unread[mgr].add(cid)
@@ -327,21 +377,6 @@ async def h_chat_request(u: Update, _):
     )
     await u.message.reply_text("Если хотите что-то ещё – пользуйтесь меню ниже.", reply_markup=kb_client())
 
-# ─── Chat request to bot ───────────────────────────────
-async def h_chat_bot_request(u: Update, _):
-    uid = u.effective_user.id
-    cur.execute("SELECT customer_id FROM users WHERE telegram_id=?", (uid,))
-    r = cur.fetchone()
-    if not r:
-        return await u.message.reply_text("Сначала авторизуйтесь.", reply_markup=kb_start())
-    cid = r[0]
-    client_chat[uid]   = cid
-    bot_chat_mode[uid] = True
-    await u.message.reply_text(
-        "✅ Вы начали чат с ботом. Задавайте вопросы об автозапчастях, ремонте и оформлении заказов.",
-        reply_markup=kb_client_chat()
-    )
-
 # ─── MANAGER LISTS ────────────────────────────────────
 async def _send_mgr_list(u: Update, *, active=False):
     uid = u.effective_user.id
@@ -353,7 +388,7 @@ async def _send_mgr_list(u: Update, *, active=False):
         if not cids:
             return await u.message.reply_text("Список пуст.")
         q = ",".join("?" for _ in cids)
-        cur.execute(f"SELECT customer_id,telegram_id,phone FROM users WHERE	customer_id IN ({q})", cids)
+        cur.execute(f"SELECT customer_id,telegram_id,phone FROM users WHERE customer_id IN ({q})", cids)
         rows = cur.fetchall()
     else:
         title = "👥 *Мои клиенты:*"
@@ -376,17 +411,14 @@ async def _send_mgr_list(u: Update, *, active=False):
         buttons.append([InlineKeyboardButton(label, callback_data=f"open:{cid}")])
     await u.message.reply_text(title, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(buttons))
 
-async def h_btn_active(u: Update, _):  await _send_mgr_list(u, active=True)
-async def h_btn_clients(u: Update, _): await _send_mgr_list(u,	active=False)
+async def h_btn_active(u: Update, _): await _send_mgr_list(u, active=True)
+async def h_btn_clients(u: Update, _): await _send_mgr_list(u, active=False)
 
 # ─── CALLBACKS (open/close/history) ────────────────────
 async def h_cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cb = upd.callback_query
     await cb.answer()
     data, uid = cb.data, cb.from_user.id
-    if data == "cli_close":
-        bot_chat_mode.pop(uid, None)
-        return await _close_common(uid, ctx, from_manager=False)
     if data.startswith("open:"):
         cid = int(data.split(":", 1)[1])
         manager_chat[uid] = cid
@@ -403,6 +435,8 @@ async def h_cb(upd: Update, ctx: ContextTypes.DEFAULT_TYPE):
         msgs = history.get(cid, [])
         text = "\n".join(f"*{who}:* {m}" for who, m in msgs) or "История пуста."
         await cb.edit_message_text(text, parse_mode="Markdown", reply_markup=ikb_mgr_chat())
+    elif data == "cli_close":
+        await _close_common(uid, ctx, from_manager=False)
 
 async def _close_common(uid, ctx, *, from_manager):
     if from_manager:
@@ -410,7 +444,7 @@ async def _close_common(uid, ctx, *, from_manager):
         if cid:
             chat_manager.pop(cid, None)
             unread[uid].discard(cid)
-            cur.execute("SELECT telegram_id FROM users WHERE	customer_id=?", (cid,))
+            cur.execute("SELECT telegram_id FROM users WHERE customer_id=?", (cid,))
             r = cur.fetchone()
             if r:
                 client_chat.pop(r[0], None)
@@ -428,16 +462,14 @@ async def _close_common(uid, ctx, *, from_manager):
         await ctx.bot.send_message(uid, "🛑 Чат завершён.", reply_markup=kb_client())
 
 async def h_cli_close(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uid = u.effective_user.id
-    bot_chat_mode.pop(uid, None)
-    await _close_common(uid, ctx, from_manager=False)
+    await _close_common(u.effective_user.id, ctx, from_manager=False)
 
 # ─── TEXT HANDLERS ─────────────────────────────────────
 async def h_text_manager(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cid = manager_chat.get(u.effective_user.id)
     if not cid:
         return
-    cur.execute("SELECT telegram_id FROM users WHERE	customer_id=?", (cid,))
+    cur.execute("SELECT telegram_id FROM users WHERE customer_id=?", (cid,))
     r = cur.fetchone()
     if not r:
         return
@@ -447,35 +479,15 @@ async def h_text_manager(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await ctx.bot.send_message(tgt, f"👤 Менеджер: {txt}")
 
 async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    uid = u.effective_user.id
-    text = u.message.text
-
-    # закрытие чата с ботом
-    if bot_chat_mode.get(uid) and text == "🛑 Завершить чат":
-        bot_chat_mode.pop(uid, None)
-        return await u.message.reply_text("🛑 Чат с ботом завершён.", reply_markup=kb_client())
-
-    # режим «Чат с ботом»
-    if bot_chat_mode.get(uid):
-        resp = await openai.ChatCompletion.acreate(
-            model="gpt-4o-mini",
-            messages=[
-                {"role":"system","content":
-                 "Ты — ассистент автосервиса Autotechnik. Отвечай только на вопросы об автозапчастях, автомобилях, ремонте и оформлении заказов. Если вопрос вне этой области — вежливо отказать."},
-                {"role":"user","content":text}
-            ]
-        )
-        return await u.message.reply_text(resp.choices[0].message.content)
-
-    # обычный клиент→менеджер чат
-    cid = client_chat.get(uid)
+    cid = client_chat.get(u.effective_user.id)
     if not cid:
         return
     mlog = chat_manager.get(cid)
     mgr  = manager_tid(mlog) if mlog else None
-    history[cid].append((u.effective_user.full_name, text))
+    txt  = u.message.text
+    history[cid].append((u.effective_user.full_name, txt))
     if mgr and manager_chat.get(mgr) == cid:
-        await ctx.bot.send_message(mgr, f"👤 {u.effective_user.full_name}: {text}")
+        await ctx.bot.send_message(mgr, f"👤 {u.effective_user.full_name}: {txt}")
     else:
         if mgr:
             unread[mgr].add(cid)
@@ -484,14 +496,26 @@ async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def remind_unread():
     for mgr_tid, cids in unread.items():
         for cid in list(cids):
-            cur.execute("SELECT phone FROM users WHERE	customer_id=?", (cid,))
+            cur.execute("SELECT phone FROM users WHERE customer_id=?", (cid,))
             row = cur.fetchone()
             phone = row[0] if row else "—"
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("▶ Подключиться", callback_data=f"open:{cid}")]])
+            text = f"🔔 Новый чат от {phone}"
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("▶ Подключиться к чату", callback_data=f"open:{cid}")
+            ]])
             try:
-                await app.bot.send_message(mgr_tid, f"🔔 Новый чат от {phone}", reply_markup=kb)
+                await app.bot.send_message(mgr_tid, text, reply_markup=kb)
             except:
                 pass
+
+def stable_ref(p):
+    return (
+        p.get("reference")
+        or p.get("ref")
+        or p.get("positionID")
+        or p.get("id")
+        or f"{p.get('article')}_{p.get('brand')}"
+    )
 
 async def check_once():
     cur.execute("SELECT telegram_id,customer_id,last_statuses FROM users")
@@ -514,7 +538,7 @@ async def check_once():
             oid  = o.get("orderNumber") or o.get("id")
             addr = o.get("deliveryOrderAddress") or ""
             for p in o.get("positions", []):
-                key  = f"{oid}__{p.get('id', p.get('article'))}"
+                key  = f"{oid}__{stable_ref(p)}"
                 stat = clean(p.get("statusName"))
                 now[key] = stat
                 if not first_run and old.get(key) != stat:
@@ -531,14 +555,11 @@ async def check_once():
 
 # ─── MAIN ──────────────────────────────────────────────
 async def main():
-    nest_asyncio.apply()
+    if not BOT_TOKEN:
+        raise RuntimeError("TG_BOT_TOKEN не задан!")
     req = HTTPXRequest(connect_timeout=10, read_timeout=30)
     global app
-    app = Application.builder()\
-        .token(BOT_TOKEN)\
-        .request(req)\
-        .concurrent_updates(True)\
-        .build()
+    app = Application.builder().token(BOT_TOKEN).request(req).build()
 
     # handlers
     app.add_handler(CommandHandler("start", h_start))
@@ -548,26 +569,32 @@ async def main():
     app.add_handler(MessageHandler(filters.Regex("^🎁"), h_card))
     app.add_handler(MessageHandler(filters.Regex("^📋"), h_my_orders))
     app.add_handler(MessageHandler(filters.Regex("^💬"), h_chat_request))
-    app.add_handler(MessageHandler(filters.Regex("^Чат с ботом$"), h_chat_bot_request))
     app.add_handler(MessageHandler(filters.Regex("^🗂"), h_btn_active))
     app.add_handler(MessageHandler(filters.Regex("^👥"), h_btn_clients))
     app.add_handler(MessageHandler(filters.Regex("^📚"), h_catalogs))
     app.add_handler(CallbackQueryHandler(h_catalog_section, pattern=r"^cat:"))
     app.add_handler(CallbackQueryHandler(h_cb))
+
     # текстовые хэндлеры
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, h_text_manager), group=0)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, h_text_client),  group=1)
+
+    # ловим «🛑 Завершить чат»
     app.add_handler(MessageHandler(filters.Regex(r"^🛑 Завершить чат$"), h_cli_close), group=2)
 
-# ─── scheduler ───────────────────────
+    # scheduler
     sch = AsyncIOScheduler()
-    sch.add_job(check_once, "interval", seconds=CHECK_INTERVAL)
+    sch.add_job(check_once,    "interval", seconds=CHECK_INTERVAL)
     sch.add_job(remind_unread, "interval", seconds=REMIND_INTERVAL)
     sch.start()
 
-
-    # start polling
-    await app.run_polling()
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    logging.info("✅ Bot started!")
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
+    nest_asyncio.apply()
     asyncio.run(main())
+git commit -am "Добавил напоминания о выдаче и кнопку возврата"
