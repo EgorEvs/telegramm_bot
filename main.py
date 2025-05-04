@@ -33,6 +33,8 @@ from telegram.ext import (
     filters,
 )
 from telegram.request import HTTPXRequest
+from dotenv import load_dotenv
+load_dotenv()
 
 # ─── CONFIG ──────────────────────────────────────────────
 API_BASE      = "https://www.autotechnik.store/api/v1"
