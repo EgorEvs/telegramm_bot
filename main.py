@@ -582,11 +582,21 @@ async def main():
     # ловим «🛑 Завершить чат»
     app.add_handler(MessageHandler(filters.Regex(r"^🛑 Завершить чат$"), h_cli_close), group=2)
 
-    # scheduler
+     # scheduler
     sch = AsyncIOScheduler()
     sch.add_job(check_once,    "interval", seconds=CHECK_INTERVAL)
     sch.add_job(remind_unread, "interval", seconds=REMIND_INTERVAL)
     sch.start()
+
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    logging.info("✅ Bot started!")
+    await asyncio.Event().wait()
+
+if __name__ == "__main__":
+    nest_asyncio.apply()
+    asyncio.run(main())
 
     await app.initialize()
     await app.start()
