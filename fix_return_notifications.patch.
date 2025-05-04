@@ -1,0 +1,63 @@
+diff --git a/main.py b/main.py
+index abcdef0..1234567 100644
+--- a/main.py
++++ b/main.py
+@@ -66,7 +66,30 @@ def order_message(oid, name, price, status, addr="", list_mode=False):
+     if READY_PLAIN.fullmatch(st):
+-        return base + f"{clean(name)} — {rub(price)}{addr_line}\n🏬 *Готов к выдаче!*"
++        # Готов к выдаче без указания дней
++        return (
++            base
++            + f"{clean(name)} — {rub(price)}{addr_line}\n"
++            + f"🏬 *Готов к выдаче!*"
++        )
+     m = READY_DAY.match(st)
+     if m:
+         day = int(m.group(1))
+-        if day == 7:
+-            return base + f"{clean(name)} — {rub(price)}{addr_line}\n⚠️ *Последний день хранения!*"
+-        else:
+-            return base + f"{clean(name)} — {rub(price)}{addr_line}\n📅 Ожидайте, ваш заказ готовится."
++        # Формируем напоминание о хранении
++        if day >= 7:
++            day_text = "⚠️ *Последний день хранения!*"
++        else:
++            day_text = f"⏰ Напоминаем, заберите заказ (день хранения: {day})"
++
++        # Всегда выводим “Готов к выдаче!” внизу
++        return (
++            base
++            + f"{clean(name)} — {rub(price)}{addr_line}\n"
++            + day_text + "\n"
++            + "🏬 *Готов к выдаче!*"
++        )
+     if list_mode and st.lower() in EXCLUDED:
+         return None
+     return base + f"🛒 {clean(name)} — {rub(price)}\n📌 Статус: {status}{addr_line}"
+@@ -476,6 +499,20 @@ async def check_once():
+                 now[key] = stat
+                 if not first_run and old.get(key) != stat:
+                     msg = order_message(
+-                        oid, p.get("description"), p.get("price") or p.get("sum"), stat, addr=addr
++                        oid,
++                        p.get("description"),
++                        p.get("price") or p.get("sum"),
++                        stat,
++                        addr=addr
+                     )
+                     if msg:
+                         to_send.append(msg)
++
++                # Если статус “Готово к выдаче (N-й день)”, уведомляем менеджера отдельно
++                if "готово к выдаче" in stat.lower():
++                    m_tid = manager_tid(chat_manager.get(cid, ""))
++                    if m_tid:
++                        await app.bot.send_message(
++                            m_tid,
++                            f"🔔 *Заказ №{oid}* ждёт выдачи (день хранения: {m.group(1) if m else '?'})\n"
++                            "Оформите возврат поставщику, если клиент не заберёт.",
++                            parse_mode="Markdown"
++                        )
+ 
+         for m in to_send:
+             try:
