@@ -1,6 +1,6 @@
 """
 ────────────────────────────────────────────────────────────
- AUTOTECHNIK BOT · main.py · v4.7  (ChatGPT + polling fix)
+ AUTOTECHNIK BOT · main.py · v4.8  (ChatGPT + polling fix v2)
 ────────────────────────────────────────────────────────────
 """
 
@@ -34,7 +34,6 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 from dotenv import load_dotenv
-
 import openai
 
 load_dotenv()
@@ -101,13 +100,8 @@ def kb_start():
 
 def kb_client():
     return ReplyKeyboardMarkup(
-        [
-            ["💬 Чат с менеджером"],
-            ["📋 Мои активные заказы"],
-            ["🎁 Бонусная-карта"],
-            ["📚 Каталоги товаров"],
-            ["Чат с ботом"]
-        ],
+        [["💬 Чат с менеджером"], ["📋 Мои активные заказы"], ["🎁 Бонусная-карта"],
+         ["📚 Каталоги товаров"], ["Чат с ботом"]],
         resize_keyboard=True
     )
 
@@ -121,9 +115,7 @@ def ikb_mgr_chat():
     ]])
 
 def ikb_cli_chat():
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🛑 Завершить чат", callback_data="cli_close"),
-    ]])
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Завершить чат", callback_data="cli_close")]])
 
 def kb_client_chat():
     return ReplyKeyboardMarkup([["🛑 Завершить чат"]], resize_keyboard=True)
@@ -148,13 +140,13 @@ def order_message(oid, name, price, status, addr="", list_mode=False):
         return None
     return base + f"🛒 {clean(name)} — {rub(price)}\n📌 Статус: {status}{addr_line}"
 
-# ─── CATALOGS DATA & HANDLERS ──────────────────────────
+# ─── CATALOGS DATA ─────────────────────────────────────
 CATALOG_SECTIONS = {
     "61": [
         ("Запчасти по разделам",                "https://www.autotechnik.store/d_catalog3/61/"),
         ("Запчасти для грузовой техники",       "https://www.autotechnik.store/d_catalog3/124/"),
-        ("Силовые агрегаты",                  "https://www.autotechnik.store/d_catalog3/126/"),
-        # ... остальные разделы ...
+        ("Силовые агрегаты",                    "https://www.autotechnik.store/d_catalog3/126/"),
+        # … и т.д. …
     ],
     "autocatalog": [
         ("Подбор по параметрам", "https://www.autotechnik.store/autocatalog/"),
@@ -162,14 +154,14 @@ CATALOG_SECTIONS = {
         ("Сальники",             "https://www.autotechnik.store/d_catalog3/98/"),
         ("Ремни",                "https://www.autotechnik.store/d_catalog3/97/"),
     ],
-    # ... другие ключи ...
+    # … другие разделы …
 }
 
 async def h_catalogs(u: Update, _):
     buttons = [
         [InlineKeyboardButton("1. Запчасти по разделам", callback_data="cat:61")],
         [InlineKeyboardButton("2. Подбор по параметрам", callback_data="cat:autocatalog")],
-        [InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_client")],
+        [InlineKeyboardButton("⬅️ Назад в меню",           callback_data="back_to_client")],
     ]
     await u.message.reply_text("📚 Выберите раздел каталога:", reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -410,7 +402,7 @@ async def h_text_client(u: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cid = client_chat.get(uid)
     if not cid: return
     mlog = chat_manager.get(cid)
-    mgr  =	manager_tid(mlog) if mlog else None
+    mgr  = manager_tid(mlog) if mlog else None
     history[cid].append((u.effective_user.full_name, text))
     if mgr and manager_chat.get(mgr)==cid:
         await ctx.bot.send_message(mgr, f"👤 {u.effective_user.full_name}: {text}")
@@ -469,13 +461,16 @@ async def main():
     nest_asyncio.apply()
     req = HTTPXRequest(connect_timeout=10, read_timeout=30)
     global app
-    app = Application.builder()\
-        .token(BOT_TOKEN)\
-        .request(req)\
-        .concurrent_updates(True)\
+    app = (
+        Application
+        .builder()
+        .token(BOT_TOKEN)
+        .request(req)
+        .concurrent_updates(True)
         .build()
+    )
 
-    # handlers
+    # — handlers —
     app.add_handler(CommandHandler("start", h_start))
     app.add_handler(CommandHandler(["manager","reg1664"], h_mgr_reg))
     app.add_handler(MessageHandler(filters.CONTACT, h_contact))
@@ -492,14 +487,14 @@ async def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, h_text_client),  group=1)
     app.add_handler(MessageHandler(filters.Regex(r"^🛑 Завершить чат$"), h_cli_close), group=2)
 
-    # scheduler
+    # — scheduler —
     sch = AsyncIOScheduler()
     sch.add_job(check_once,    "interval", seconds=CHECK_INTERVAL)
     sch.add_job(remind_unread, "interval", seconds=REMIND_INTERVAL)
-    sch.start()  # <-- перенесено внутрь main
+    sch.start()  # moved inside async main
 
+    # — polling —
     await app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
