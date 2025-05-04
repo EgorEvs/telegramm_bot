@@ -586,6 +586,9 @@ async def main():
     sch = AsyncIOScheduler()
     sch.add_job(check_once,    "interval", seconds=CHECK_INTERVAL)
     sch.add_job(remind_unread, "interval", seconds=REMIND_INTERVAL)
+    sch.start()  # ← ВОТ ЭТОГО НЕ ХВАТАЛО
+
+    await app.initialize()
  
 
     await app.initialize()
