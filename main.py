@@ -604,7 +604,4 @@ if __name__ == "__main__":
     logging.info("✅ Bot started!")
     await asyncio.Event().wait()
 
-if __name__ == "__main__":
-    nest_asyncio.apply()
-    asyncio.run(main())
 
