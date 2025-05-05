@@ -598,10 +598,5 @@ if __name__ == "__main__":
     nest_asyncio.apply()
     asyncio.run(main())
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    logging.info("✅ Bot started!")
-    await asyncio.Event().wait()
 
 
