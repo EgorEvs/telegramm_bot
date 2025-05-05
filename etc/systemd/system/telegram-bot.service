@@ -1,0 +1,12 @@
+[Unit]
+Description=Telegram Bot
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/telegramm_bot
+ExecStart=/opt/telegramm_bot/venv/bin/python /opt/telegramm_bot/main.py
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
