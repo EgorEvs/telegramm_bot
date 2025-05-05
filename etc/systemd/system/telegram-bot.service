@@ -1,16 +1,12 @@
-[Unit]
-Description=Telegram Bot
-After=network.target
-
-[Service]
-[Service]
 Type=simple
 WorkingDirectory=/opt/telegramm_bot
 EnvironmentFile=/opt/telegramm_bot/.env
+
+ExecStartPre=/usr/bin/git -C /opt/telegramm_bot pull origin main
 ExecStart=/usr/bin/python3 /opt/telegramm_bot/main.py
+
 Restart=always
 RestartSec=5
 
-
-[Install]
-WantedBy=multi-user.target
+StandardOutput=journal
+StandardError=journal
